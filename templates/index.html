@@ -1,0 +1,211 @@
+<!--
+Nearby Shop Discovery System — Item-Based Search Prototype
+Single-file prototype (Nearby-Shop-Discovery-ItemSearch.html)
+
+How to run:
+1. Save this file as `Nearby-Shop-Discovery-ItemSearch.html`.
+2. Open it in a modern browser (Chrome/Edge/Firefox).
+
+Features:
+- Mobile-first responsive UI (clean marketplace look)
+- Large unified search: search shops or items
+- Item-based search shows which shops carry the item, stock & price
+- Shop-based search (name/category/location)
+- Filters: category, distance, rating, item availability, stock level
+- Sorting: nearest, highest rating, top stock, lowest price (when item searched)
+- Interactive Leaflet map with pins; click pin to preview shop
+- Shop details modal with photos, items table (price, stock), contact, hours, reviews
+- Admin demo to add shops, add items, update stock (stored in localStorage)
+- Sample shop data embedded
+
+Notes & limitations:
+- All data is client-side (localStorage). For production, replace with backend (Node/Express + MongoDB).
+- Geolocation requires HTTPS or localhost.
+- Map uses OpenStreetMap tiles via Leaflet.
+
+The code is commented to help you extend it.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Nearby Shop Discovery — Item Search</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    
+
+    <header>
+    <div class="logo">
+      <div class="brand">NS</div>
+      <div>
+        <div style="font-weight:700">Nearby Shop Discovery</div>
+        <div class="muted">Find items & shops near you</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button id="detectBtn" class="small-btn"><i class="fa-solid fa-location-dot"></i> Detect</button>
+      <button id="loginBtn" class="small-btn">Login</button>
+      <button id="logoutBtn" class="small-btn" onclick="logoutUser()" style="display:none;">Logout</button>
+
+    </div>
+  </header>
+
+  
+  <div class="container">
+    <!-- Search area -->
+    <div class="search-area">
+      <div class="big-search">
+        <i class="fa-solid fa-magnifying-glass muted"></i>
+        <input id="globalSearch" placeholder="Search for shops or items (e.g. 'milk', 'charger', 'bakery')">
+        <div class="search-actions">
+          <select id="searchMode" title="Search mode">
+            <option value="auto">Auto (item or shop)</option>
+            <option value="item">Item</option>
+            <option value="shop">Shop</option>
+          </select>
+          <button id="searchBtn" class="small-btn">Search</button>
+        </div>
+      </div>
+
+      <div class="filters">
+        <select id="categoryFilter"><option value="">All Categories</option><option>Grocery</option><option>Electronics</option><option>Pharmacy</option><option>Clothing</option><option>Bakery</option><option>Restaurant</option></select>
+        <select id="distanceFilter"><option value="">Any distance</option><option value="1">Within 1 km</option><option value="3">Within 3 km</option><option value="10">Within 10 km</option></select>
+        <select id="ratingFilter"><option value="">Any rating</option><option value="4">4+ stars</option><option value="3">3+ stars</option></select>
+        <select id="availabilityFilter"><option value="">Any availability</option><option value="instock">In stock only</option><option value="lowstock">Low stock (&lt;5)</option></select>
+        <select id="sortBy"><option value="nearest">Nearest</option><option value="rating">Highest Rated</option><option value="topstock">Top Stock</option><option value="lowprice">Lowest Price</option></select>
+      </div>
+    </div>
+
+    <!-- Main grid: left list, right map -->
+    <div class="grid">
+      <div>
+        <div class="panel">
+          <h3 style="margin:0">Featured Shops</h3>
+          <div class="featured" id="featured"></div>
+        </div>
+
+        <div class="panel" style="margin-top:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h3 style="margin:0">Results</h3>
+            <div class="muted" id="resultCount">0 results</div>
+          </div>
+          <div id="list" class="shop-list" style="margin-top:8px"></div>
+        </div>
+
+        <div class="admin panel" id="adminPanel">
+          <h4 style="margin:0">Admin Demo</h4>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input id="addName" placeholder="Shop name">
+            <input id="addCat" placeholder="Category">
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input id="addLat" placeholder="Latitude">
+            <input id="addLon" placeholder="Longitude">
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input id="addRating" placeholder="Rating">
+            <input id="addVisits" placeholder="Visits">
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="addShop" class="small-btn">Add Shop</button>
+            <button id="resetBtn" class="small-btn">Reset Data</button>
+          </div>
+          <p class="muted" style="margin-top:8px">Admin changes are saved to browser localStorage only (demo).</p>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h3 style="margin:0">Map</h3>
+            <div class="muted">Click pins to preview shop</div>
+          </div>
+          <div id="map"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- About & Contact (placeholder) -->
+    <div style="display:flex;gap:12px;margin-top:12px;flex-wrap:wrap">
+      <div class="panel" style="flex:1;min-width:260px">
+        <h4>About Us</h4>
+        <p class="muted">Prototype Nearby Shop Discovery with item-based search. Replace local data with a backend for production.</p>
+      </div>
+      <div class="panel" style="flex:1;min-width:260px">
+        <h4>Contact / Feedback</h4>
+        <p class="muted">This demo includes a simple contact form (client-only).</p>
+        <textarea id="feedback" rows="3" placeholder="Write feedback..."></textarea>
+        <div style="margin-top:8px;display:flex;gap:8px"><button id="sendFeedback" class="small-btn">Send</button></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Shop Details Modal -->
+  <div id="modal" class="modal" style="display:none">
+    <div class="modal-card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h3 id="modalName">Shop</h3>
+        <div><button id="closeModal" class="small-btn">Close</button></div>
+      </div>
+      <div class="grid-2" style="margin-top:10px">
+        <div>
+          <div id="modalPhotos" style="display:flex;gap:8px;overflow:auto;margin-bottom:8px"></div>
+          <p id="modalDesc" class="muted"></p>
+
+          <h4 style="margin:8px 0 4px 0">Items & Stock</h4>
+          <div style="overflow:auto;max-height:260px">
+            <table id="itemsTable"><thead><tr><th>Item</th><th>Price</th><th>Stock</th><th></th></tr></thead><tbody></tbody></table>
+          </div>
+
+          <h4 style="margin:8px 0 4px 0">Reviews</h4>
+          <div id="modalReviews" class="muted"></div>
+        </div>
+        <div>
+          <div class="panel">
+            <div id="modalMiniMap" style="height:200px;border-radius:8px;margin-bottom:8px"></div>
+            <div><strong>Contact</strong></div>
+            <div id="modalContact" class="muted"></div>
+            <div style="margin-top:8px"><strong>Hours</strong></div>
+            <div id="modalHours" class="muted"></div>
+            <div style="margin-top:12px"><button id="openDirections" class="btn">Get Directions</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Login Modal -->
+<div id="loginModal" style="
+  display:none;
+  position:fixed;
+  top:50%; left:50%;
+  transform:translate(-50%, -50%);
+  background:white;
+  padding:20px;
+  border-radius:10px;
+  box-shadow:0 0 10px rgba(0,0,0,0.2);
+  z-index:9999;
+">
+  <h3>Login</h3>
+  <input id="loginEmail" placeholder="Email" style="display:block;margin-bottom:10px;width:100%;padding:6px;">
+  <input id="loginPassword" type="password" placeholder="Password" style="display:block;margin-bottom:10px;width:100%;padding:6px;">
+  <button onclick="loginUser()" class="small-btn">Submit</button>
+  <button onclick="closeLogin()" class="small-btn" style="background:#aaa;">Cancel</button>
+</div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+
+      <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
